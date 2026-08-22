@@ -225,6 +225,11 @@ def resolve_rule(
         )
         if clause.params.get("rule") == rule
         and (topic is None or topic in clause.topics)
+        # No account named means no contract applies. `visible_clauses` lets an
+        # internal caller see every contract, which is right for search and
+        # wrong here: a rule resolved for nobody in particular must resolve to
+        # the defaults, not to whichever agreement happened to sort first.
+        and (clause.tier != TIER_CONTRACT or account_id is not None)
     ]
     # A global clause and the caller's own contract are both in scope; another
     # account's contract is not, and visible_clauses has already removed it.

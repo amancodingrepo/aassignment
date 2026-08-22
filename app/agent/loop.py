@@ -140,7 +140,7 @@ def _collect_sources_and_conflicts(
     seen_conflicts: set[str] = set()
 
     for result in tool_results:
-        for node in policy._walk(result):
+        for node in policy.walk(result):
             for conflict in node.get("conflicts") or []:
                 if not isinstance(conflict, dict):
                     continue

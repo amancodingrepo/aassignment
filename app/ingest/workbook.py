@@ -66,12 +66,16 @@ def parse_snapshot(raw: Any) -> datetime:
 
 
 def _cell(value: Any) -> Any:
+    """Normalise one spreadsheet cell: blanks and NaN both become None."""
     if value is None:
         return None
-    if isinstance(value, float) and pd.isna(value):
-        return None
-    if pd.isna(value) if not isinstance(value, (list, dict)) else False:
-        return None
+    try:
+        # Catches NaN and NaT alike. Guarded because pd.isna returns an array
+        # for array-like input, which is not a truth value.
+        if bool(pd.isna(value)):
+            return None
+    except (TypeError, ValueError):
+        pass
     if isinstance(value, str):
         stripped = value.strip()
         return stripped or None

@@ -74,15 +74,15 @@ def _detect_unsupported(message: str) -> list[str]:
     ]
 
 
-def _walk(value: Any):
+def walk(value: Any):
     """Yield every dict nested anywhere in a tool result."""
     if isinstance(value, dict):
         yield value
         for item in value.values():
-            yield from _walk(item)
+            yield from walk(item)
     elif isinstance(value, list):
         for item in value:
-            yield from _walk(item)
+            yield from walk(item)
 
 
 def assess(
@@ -103,7 +103,7 @@ def assess(
 
     saw_authority = False
     for result in tool_results:
-        for node in _walk(result):
+        for node in walk(result):
             if node.get("eligible") == "unknown" or node.get("must_escalate") is True:
                 unknowns = ", ".join(node.get("unknowns") or []) or "required inputs"
                 assessment.add(

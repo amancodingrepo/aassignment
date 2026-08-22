@@ -26,8 +26,11 @@ import yaml
 from app.config import CHUNK_SIDECAR_PATH, DATA_DIR
 
 SEVERITY_RE = re.compile(r"^P[1-9]\d*$", re.IGNORECASE)
+# The leading prefix is "any non-alphanumeric run" rather than a list of bullet
+# glyphs: which character pdfplumber emits for a list marker depends on the PDF's
+# font, and a missed bullet would silently drop a contract's SLA targets.
 BULLET_TARGET_RE = re.compile(
-    r"^[\s•●\-\*]*(?P<severity>P[1-9]\d*)\s*[:\-]\s*(?P<target>.+?)\s*$"
+    r"^[^A-Za-z0-9]*(?P<severity>P[1-9]\d*)\s*[:\-]\s*(?P<target>.+?)\s*$"
 )
 DURATION_RE = re.compile(
     r"(?P<value>\d+(?:\.\d+)?)\s*(?P<business>business\s+)?(?P<unit>minute|hour|day)s?",
