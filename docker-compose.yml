@@ -1,0 +1,17 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # The only variable you must supply. Everything except the chat loop --
+      # ingest, calculators, gate, signals, confirm flow -- runs without it.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      PARCELPILOT_MODEL: ${PARCELPILOT_MODEL:-claude-sonnet-5}
+      SESSION_SECRET: ${SESSION_SECRET:-dev-only-not-a-real-secret}
+    volumes:
+      - parcelpilot-data:/data
+    restart: unless-stopped
+
+volumes:
+  parcelpilot-data:

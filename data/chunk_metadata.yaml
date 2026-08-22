@@ -1,0 +1,298 @@
+# Hand-authored chunk sidecar.
+#
+# The *text* of every chunk is extracted from the PDFs at ingest -- nothing here
+# duplicates document prose. What is hand-authored is the metadata the retrieval
+# layer cannot infer reliably: authority tier, account scope, effective window,
+# topic tags, and the numeric parameters each clause supplies to the calculators.
+#
+# `params` is what makes calc.py data-driven. A rule engine that reads its
+# thresholds from the winning clause has no account IDs in it, so adding a new
+# contract is an edit to this file rather than a code change.
+#
+# `start` is a regex anchored at line start, used to locate the section heading
+# in the extracted text. A section runs until the next section's `start`.
+
+topics_vocabulary:
+  - cancellation
+  - service_credit
+  - sla
+  - severity
+  - escalation
+  - plan_capability
+  - known_issue
+  - account_contact
+  # Added beyond the eight in 03_SOURCE_AUTHORITY.md: the precedence clause is
+  # about the ladder itself, and tagging it with a subject topic would make it
+  # surface on every unrelated query.
+  - source_precedence
+
+documents:
+  - doc_id: 01_Support_Policy_v3_CURRENT
+    short_id: 01_support_v3
+    doc_title: ParcelPilot Support Policy v3 (CURRENT)
+    file: 01_Support_Policy_v3_CURRENT.pdf
+    tier: 3
+    status: current
+    scope: global
+    effective_from: "2026-05-01"
+    effective_to: null
+    internal_only: false
+    sections:
+      - section: "1"
+        section_title: Scope and source precedence
+        start: '^1\.\s*Scope and source precedence'
+        topics: [source_precedence]
+      - section: "2"
+        section_title: Severity definitions
+        start: '^2\.\s*Severity definitions'
+        topics: [severity]
+        params:
+          rule: severity_classification
+          severity_levels: [P1, P2, P3]
+          # Indicators hand-derived from this section's own wording. They are a
+          # fallback for the paths that run with no model in the loop -- the
+          # signals detectors and the calculator tests. In conversation the
+          # agent classifies by reading §2 itself, because "complete outage with
+          # no workaround" is a judgement these strings only approximate.
+          indicators:
+            P1:
+              - complete production outage
+              - all shipment creation
+              - every user
+              - http 500
+              - credential exposure
+              - api key
+              - security incident
+              - no workaround
+            P2:
+              - major feature
+              - materially degraded
+              - unavailable
+              - bulk upload fails
+              - workaround exists
+            P3:
+              - how do we
+              - how to
+              - configuration request
+              - billing contact
+              - still shows
+      - section: "3"
+        section_title: Default first-response targets
+        start: '^3\.\s*Default first-response targets'
+        topics: [sla]
+        sla_source: table
+      - section: "4"
+        section_title: Escalation
+        start: '^4\.\s*Escalation'
+        topics: [escalation]
+        params:
+          p1_escalates_immediately: true
+
+  - doc_id: 02_Support_Policy_v2_DEPRECATED
+    short_id: 02_support_v2
+    doc_title: ParcelPilot Support Policy v2 (DEPRECATED)
+    file: 02_Support_Policy_v2_DEPRECATED.pdf
+    tier: 5
+    status: deprecated
+    scope: global
+    effective_from: "2025-01-01"
+    # v3 takes effect 1 May 2026, so v2's window closes the day before. That
+    # alone excludes it from snapshot-time retrieval; the deprecated status is
+    # the second, independent guard.
+    effective_to: "2026-04-30"
+    internal_only: true
+    sections:
+      - section: "1"
+        section_title: Severity and response targets
+        start: '^Severity and response targets'
+        topics: [sla, severity]
+        sla_source: table
+
+  - doc_id: 03_Cancellation_and_Service_Credit_SOP_v4
+    short_id: 03_sop_v4
+    doc_title: Cancellation and Service Credit SOP v4
+    file: 03_Cancellation_and_Service_Credit_SOP_v4.pdf
+    tier: 2
+    status: current
+    scope: global
+    effective_from: "2026-06-15"
+    effective_to: null
+    internal_only: false
+    sections:
+      - section: "1"
+        section_title: Order cancellation
+        start: '^1\.\s*Order cancellation'
+        topics: [cancellation]
+        params:
+          rule: cancellation_fee
+          free_window_minutes: 30
+          late_fee_inr: 250
+          waiver_possible: true
+          status_rules:
+            DRAFT:
+              cancellable: true
+              fee: free
+            BOOKED:
+              cancellable: true
+              fee: windowed
+            PICKED_UP:
+              cancellable: false
+              reason: return_to_origin
+            DELIVERED:
+              cancellable: false
+              reason: already_delivered
+      - section: "2"
+        section_title: Failed-pickup service credits
+        start: '^2\.\s*Failed-pickup service credits'
+        topics: [service_credit]
+        params:
+          rule: service_credit
+          threshold_hours: 2
+          credit_cap_inr: 500
+          credit_pct_of_fee: 0.10
+          requires_carrier_fault: true
+          requires_no_customer_fault: true
+          agreement_may_replace: [threshold, amount, cap]
+      - section: "3"
+        section_title: Approval and uncertainty
+        start: '^3\.\s*Approval and uncertainty'
+        topics: [service_credit, escalation]
+        params:
+          rule: credit_approval
+          manager_approval_above_inr: 1000
+          no_promise_when_unknown: [carrier_fault, pickup_timing, customer_fault]
+
+  - doc_id: 04_Product_Operations_Guide_and_Known_Issues
+    short_id: 04_product_guide
+    doc_title: Product Operations Guide and Known Issues
+    file: 04_Product_Operations_Guide_and_Known_Issues.pdf
+    tier: 4
+    status: current
+    scope: global
+    effective_from: "2026-08-14"
+    effective_to: null
+    internal_only: false
+    sections:
+      - section: "1"
+        section_title: Plan capabilities
+        start: '^1\.\s*Plan capabilities'
+        topics: [plan_capability]
+        stop_at: '^2\.\s*Current known issues'
+        params:
+          bulk_upload_plans: [Growth, Enterprise]
+          bulk_upload_max_rows: 5000
+      - section: "2.1"
+        section_title: "KI-208 - Bulk Upload failures on large CSVs"
+        start: '^KI-208'
+        topics: [known_issue, plan_capability]
+        flags:
+          issue_id: KI-208
+          issue_status: investigating
+          match_keywords: [bulk upload, csv, rows, upload fails]
+          do_not_apply_to_new_incidents: false
+        params:
+          degradation_threshold_rows: 3000
+      - section: "2.2"
+        section_title: "KI-211 - SwiftShip pickup webhook delay"
+        start: '^KI-211'
+        topics: [known_issue]
+        flags:
+          issue_id: KI-211
+          issue_status: monitoring
+          carrier: SwiftShip
+          match_keywords: [swiftship, webhook, still shows booked, pickup confirmation, driver pickup]
+          do_not_apply_to_new_incidents: false
+        params:
+          webhook_delay_minutes: 20
+      - section: "3"
+        section_title: Resolved issue KI-176
+        start: '^3\.\s*Resolved issue'
+        topics: [known_issue]
+        status_override: resolved
+        flags:
+          issue_id: KI-176
+          issue_status: resolved
+          resolved_on: "2026-07-18"
+          match_keywords: [address validation]
+          do_not_apply_to_new_incidents: true
+
+  - doc_id: 05_Northstar_Logistics_Enterprise_Agreement
+    short_id: 05_northstar
+    doc_title: Northstar Logistics Enterprise Agreement
+    file: 05_Northstar_Logistics_Enterprise_Agreement.pdf
+    tier: 1
+    status: current
+    scope: ACCT-001
+    effective_from: "2026-01-01"
+    effective_to: "2026-12-31"
+    internal_only: false
+    sections:
+      - section: "1"
+        section_title: Support terms
+        start: '^1\.\s*Support terms'
+        topics: [sla]
+        sla_source: bullets
+        params:
+          replaces_policy_targets: true
+      - section: "2"
+        section_title: Shipment cancellation
+        start: '^2\.\s*Shipment cancellation'
+        topics: [cancellation]
+        params:
+          rule: cancellation_fee
+          waives_cancellation_fee: true
+          waiver_applies_to_statuses: [BOOKED]
+          waiver_ignores_elapsed_time: true
+          picked_up_defers_to_sop: true
+      - section: "3"
+        section_title: Service credits
+        start: '^3\.\s*Service credits'
+        topics: [service_credit]
+        params:
+          rule: service_credit
+          defers_to_sop: true
+          monthly_aggregate_cap_inr: 5000
+      - section: "4"
+        section_title: Account contact
+        start: '^4\.\s*Account contact'
+        topics: [account_contact]
+
+  - doc_id: 06_LumenWorks_Service_Agreement
+    short_id: 06_lumenworks
+    doc_title: LumenWorks Service Agreement
+    file: 06_LumenWorks_Service_Agreement.pdf
+    tier: 1
+    status: current
+    scope: ACCT-002
+    effective_from: "2026-03-01"
+    effective_to: "2027-02-28"
+    internal_only: false
+    sections:
+      - section: "1"
+        section_title: Support terms
+        start: '^1\.\s*Support terms'
+        topics: [sla]
+        sla_source: bullets
+        params:
+          replaces_policy_targets: true
+          weekend_or_after_hours_coverage: false
+      - section: "2"
+        section_title: Cancellation terms
+        start: '^2\.\s*Cancellation terms'
+        topics: [cancellation]
+        params:
+          rule: cancellation_fee
+          waives_cancellation_fee: false
+          defers_to_sop: true
+      - section: "3"
+        section_title: Failed-pickup credits
+        start: '^3\.\s*Failed-pickup credits'
+        topics: [service_credit]
+        params:
+          rule: service_credit
+          threshold_hours: 4
+          fixed_credit_inr: 300
+          requires_carrier_fault: true
+          requires_no_customer_fault: true
+          replaces_default_amount: true
+          replaces_default_threshold: true
