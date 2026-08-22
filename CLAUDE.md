@@ -104,7 +104,7 @@ docs/                  these specs
   API key. Assume the grader gives it five minutes.
 
 <!-- SKILLGOD:START v1.1 -->
-# SkillGod Project Memory (auto-generated — do not edit; updated 2026-08-22 21:34)
+# SkillGod Project Memory (auto-generated — do not edit; updated 2026-08-22 21:50)
 
 # SkillGod Active
 
@@ -123,20 +123,20 @@ After completing **meaningful** work (decisions, architecture, non-obvious fixes
 ## SkillGod health
 - version: 1.0.1+794a995
 - project_id: `visha-90fc8883`
-- last inject: 2026-08-22T21:34:07 (runtime)
+- last inject: 2026-08-22T21:50:28 (runtime)
 - last capture: never (-)
 - markers: SKILLGOD:START v1.1
 
 ## Project memory
 
 ## Decisions
+- {"filePath": "C:\\Users\\visha\\OneDrive\\Desktop\\work\\aman\\app\\authority.py", "oldString": " candidates = [\n clause\n for clause in visible_clauses(\n conn, account_i
 - {"filePath": "C:\\Users\\visha\\OneDrive\\Desktop\\work\\aman\\app\\signals\\detect.py", "oldString": " stated = _ROWS_RE.search(said)\n capability = resolve_rule(conn, None, acc
 - {"filePath": "C:\\Users\\visha\\OneDrive\\Desktop\\work\\aman\\data\\chunk_metadata.yaml", "oldString": " topics: [severity]\n params:\n severity_levels: [P1, P2, P3]", "newStri
 - {"filePath": "C:\\Users\\visha\\OneDrive\\Desktop\\work\\aman\\data\\chunk_metadata.yaml", "oldString": " stop_at: '^2.s*Current known issues'", "newString": " stop_at: '^2\\.\\s*C
 - {"stdout": "-rw-r--r-- 1 visha 197609 2475 Aug 22 20:51 AGENTS.md\n-rw-r--r-- 1 visha 197609 2546 Aug 22 20:51 CONVENTIONS.md\n-rw-r--r-- 1 visha 197609 2585 Aug 22 20:51 GEMINI.md
 - {"stdout": "=============== 01_ARCHITECTURE.md ===============\n# Architecture\n\n## Layer stack\n\n```\nReact chat UI (role switcher, tool trace, source cards, confirm cards)\n | 
 - {"content":"---\ntitle: Railway Metal\ndescription: Railway Metal is Railwayâ€™s own cloud infrastructure, built for high-performance, scalable, and cost-efficient app deployments.
-- {"results":[{"breadcrumb":"Railway Documentation > Deploy Static Sites with Zero Configuration and Custom Domains > Deploy replicas in different regions for global performance","co
 
 ## Notes
 
