@@ -19,6 +19,10 @@ class MissingApiKey(RuntimeError):
     pass
 
 
+class QuotaExhausted(RuntimeError):
+    """Raised after every Gemini model in the fallback chain returns 429/404."""
+
+
 @dataclass
 class ToolUse:
     id: str
@@ -52,25 +56,128 @@ def provider_name() -> str:
     return pair[0] if pair else "none"
 
 
-# Google retired the 2.x flash IDs; the API now 404s them.
+# Gemini 2.0 Flash IDs are shut down; the API 404s them. 2.5 Flash is still
+# a live endpoint — do not remap it onto 3.6, whose free-tier daily cap is 20.
 _RETIRED_GEMINI = {
     "gemini-2.0-flash": "gemini-3.6-flash",
     "gemini-2.0-flash-001": "gemini-3.6-flash",
-    "gemini-2.5-flash": "gemini-3.6-flash",
     "models/gemini-2.0-flash": "gemini-3.6-flash",
-    "models/gemini-2.5-flash": "gemini-3.6-flash",
 }
 
 DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
+
+# Free-tier generate_content quotas are per model. After 3.6-flash's 20 RPD
+# is gone, sibling Flash/Lite IDs still work until their own caps are hit.
+GEMINI_FALLBACK_MODELS = (
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-3.7-flash",
+)
+
+_gemini_sticky_model: str | None = None
+
+
+def resolve_gemini_model(name: str) -> str:
+    return _RETIRED_GEMINI.get(name, name)
 
 
 def model_name() -> str:
     override = os.environ.get("PARCELPILOT_MODEL")
     if override:
-        return _RETIRED_GEMINI.get(override, override)
+        return resolve_gemini_model(override)
     if provider_name() == "gemini":
         return DEFAULT_GEMINI_MODEL
     return "claude-sonnet-5"
+
+
+def gemini_model_candidates(primary: str | None = None) -> list[str]:
+    chosen = resolve_gemini_model(primary or model_name())
+    extras = [
+        resolve_gemini_model(item.strip())
+        for item in os.environ.get("PARCELPILOT_MODEL_FALLBACKS", "").split(",")
+        if item.strip()
+    ]
+    ordered = [chosen, *extras, *GEMINI_FALLBACK_MODELS]
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in ordered:
+        if item not in seen:
+            seen.add(item)
+            unique.append(item)
+    return unique
+
+
+def reset_gemini_sticky() -> None:
+    global _gemini_sticky_model
+    _gemini_sticky_model = None
+
+
+def _is_model_unavailable(error: BaseException) -> bool:
+    code = getattr(error, "status_code", None)
+    if code is None:
+        code = getattr(error, "code", None)
+    if code in (429, 404, "RESOURCE_EXHAUSTED", "NOT_FOUND"):
+        return True
+    text = str(error)
+    return any(
+        needle in text
+        for needle in ("RESOURCE_EXHAUSTED", "NOT_FOUND", "429", "404")
+    )
+
+
+def _quota_message(tried: list[str], last_error: BaseException | None) -> str:
+    models = ", ".join(tried) if tried else model_name()
+    hint = ""
+    if last_error is not None:
+        detail = str(last_error).replace("\n", " ").strip()
+        if len(detail) > 280:
+            detail = detail[:277] + "..."
+        hint = f" Last error: {detail}"
+    return (
+        "Gemini free-tier quota is exhausted. "
+        f"Tried: {models}. "
+        "gemini-3.6-flash allows 20 generate_content requests/day on the free "
+        "plan; other Flash/Lite models have separate caps. Set "
+        "PARCELPILOT_MODEL=gemini-3.5-flash-lite, wait for the daily reset, "
+        "or enable billing: https://ai.google.dev/gemini-api/docs/rate-limits"
+        f"{hint}"
+    )
+
+
+def public_error_message(error: BaseException) -> str:
+    if isinstance(error, (MissingApiKey, QuotaExhausted)):
+        return str(error)
+    if _is_model_unavailable(error):
+        return _quota_message([model_name()], error)
+    return str(error)
+
+
+def run_with_model_fallback(candidates: list[str], call_model) -> ModelTurn:
+    """Try each model id. Stick to the first that succeeds for this process."""
+    global _gemini_sticky_model
+    ordered = list(candidates)
+    sticky = _gemini_sticky_model
+    if sticky and sticky in ordered:
+        ordered = [sticky] + [item for item in ordered if item != sticky]
+    tried: list[str] = []
+    last_error: BaseException | None = None
+    for model in ordered:
+        tried.append(model)
+        try:
+            turn = call_model(model)
+        except Exception as error:
+            if not _is_model_unavailable(error):
+                raise
+            last_error = error
+            if _gemini_sticky_model == model:
+                _gemini_sticky_model = None
+            continue
+        _gemini_sticky_model = model
+        return turn
+    raise QuotaExhausted(_quota_message(tried, last_error)) from last_error
 
 
 def json_schema_to_gemini(schema: dict[str, Any] | None) -> dict[str, Any]:
@@ -154,11 +261,20 @@ def _complete_gemini(
         temperature=0.1,
         max_output_tokens=2048,
     )
-    response = client.models.generate_content(
-        model=model_name(),
-        contents=_gemini_contents(conversation),
-        config=config,
-    )
+    contents = _gemini_contents(conversation)
+
+    def call_model(model: str) -> ModelTurn:
+        response = client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=config,
+        )
+        return _parse_gemini_response(response)
+
+    return run_with_model_fallback(gemini_model_candidates(), call_model)
+
+
+def _parse_gemini_response(response: Any) -> ModelTurn:
     if not getattr(response, "candidates", None):
         text = getattr(response, "text", None) or ""
         return ModelTurn(text=text)

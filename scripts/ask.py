@@ -15,7 +15,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.agent.loop import MissingApiKey, run_turn  # noqa: E402
+from app.agent.llm import MissingApiKey, QuotaExhausted  # noqa: E402
+from app.agent.loop import run_turn  # noqa: E402
 from app.db import connect  # noqa: E402
 from app.ingest.build import ensure_loaded  # noqa: E402
 from app.session import personas, session_from_persona  # noqa: E402
@@ -78,7 +79,7 @@ def main(argv: list[str]) -> int:
                 print(f"\nconfidence: {answer['confidence']}")
             elif kind == "error":
                 print(f"error: {event['error']}")
-    except MissingApiKey as error:
+    except (MissingApiKey, QuotaExhausted) as error:
         print(f"\n{error}")
         return 1
 

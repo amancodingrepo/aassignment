@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.agent.llm import (
+    ModelTurn,
+    QuotaExhausted,
+    gemini_model_candidates,
     gemini_tool_declarations,
     json_schema_to_gemini,
     model_name,
     provider_name,
+    public_error_message,
+    reset_gemini_sticky,
+    run_with_model_fallback,
 )
 
 
@@ -62,5 +70,70 @@ def test_retired_gemini_ids_map_to_current_flash(monkeypatch):
     assert model_name() == "gemini-3.6-flash"
     monkeypatch.setenv("PARCELPILOT_MODEL", "gemini-2.0-flash")
     assert model_name() == "gemini-3.6-flash"
+    # 2.5 Flash is still a live model with its own free-tier quota.
     monkeypatch.setenv("PARCELPILOT_MODEL", "gemini-2.5-flash")
-    assert model_name() == "gemini-3.6-flash"
+    assert model_name() == "gemini-2.5-flash"
+
+
+def test_gemini_candidates_lead_with_primary_then_lite(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("PARCELPILOT_MODEL", raising=False)
+    monkeypatch.delenv("PARCELPILOT_MODEL_FALLBACKS", raising=False)
+    candidates = gemini_model_candidates()
+    assert candidates[0] == "gemini-3.6-flash"
+    assert "gemini-3.5-flash-lite" in candidates
+    assert candidates.index("gemini-3.5-flash-lite") == 1
+
+
+def test_quota_falls_back_then_sticks(monkeypatch):
+    reset_gemini_sticky()
+    calls: list[str] = []
+
+    def call_model(model: str) -> ModelTurn:
+        calls.append(model)
+        if model == "gemini-3.6-flash":
+            raise RuntimeError(
+                "429 RESOURCE_EXHAUSTED. Quota exceeded for metric: "
+                "generate_content_free_tier_requests, limit: 20, "
+                "model: gemini-3.6-flash"
+            )
+        return ModelTurn(text=f"ok:{model}")
+
+    first = run_with_model_fallback(
+        ["gemini-3.6-flash", "gemini-3.5-flash-lite"], call_model
+    )
+    assert first.text == "ok:gemini-3.5-flash-lite"
+    second = run_with_model_fallback(
+        ["gemini-3.6-flash", "gemini-3.5-flash-lite"], call_model
+    )
+    assert second.text == "ok:gemini-3.5-flash-lite"
+    assert calls == [
+        "gemini-3.6-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.5-flash-lite",
+    ]
+    reset_gemini_sticky()
+
+
+def test_all_models_exhausted_raises_readable_error():
+    reset_gemini_sticky()
+
+    def call_model(model: str) -> ModelTurn:
+        raise RuntimeError(f"429 RESOURCE_EXHAUSTED model: {model}")
+
+    with pytest.raises(QuotaExhausted, match="20 generate_content requests/day"):
+        run_with_model_fallback(
+            ["gemini-3.6-flash", "gemini-3.5-flash-lite"], call_model
+        )
+    reset_gemini_sticky()
+
+
+def test_public_error_message_strips_clienterror_repr():
+    error = RuntimeError(
+        "429 RESOURCE_EXHAUSTED. You exceeded your current quota, "
+        "model: gemini-3.6-flash"
+    )
+    message = public_error_message(error)
+    assert "ClientError" not in message
+    assert "gemini-3.6-flash" in message

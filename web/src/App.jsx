@@ -510,7 +510,9 @@ function CustomerWelcome({ context, suggestions, onSend, session }) {
               <div className="ctx-panel-label">Open tickets</div>
               {context.open_tickets.map((t) => (
                 <div key={t.ticket_id} className="ctx-ticket-row">
-                  <span className={SEV_CLASS[t.severity] || 'sev'}>{t.severity}</span>
+                  {t.severity ? (
+                    <span className={SEV_CLASS[t.severity] || 'sev'}>{t.severity}</span>
+                  ) : null}
                   <span className="ctx-ticket-id mono">{t.ticket_id}</span>
                   <span className="ctx-ticket-subj">{t.subject}</span>
                 </div>
@@ -525,7 +527,11 @@ function CustomerWelcome({ context, suggestions, onSend, session }) {
                 <div key={o.order_id} className="ctx-order-row">
                   <span className="ctx-order-id mono">{o.order_id}</span>
                   <span className={`ctx-order-status ${STATUS_CLASS[o.status] || ''}`}>{o.status}</span>
-                  <span className="ctx-order-route">{o.origin_city} → {o.destination_city}</span>
+                  <span className="ctx-order-route">
+                    {o.origin_city && o.destination_city
+                      ? `${o.origin_city} → ${o.destination_city}`
+                      : o.carrier}
+                  </span>
                 </div>
               ))}
             </div>

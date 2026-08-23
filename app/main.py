@@ -26,8 +26,8 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, URLSafeSerializer
 
-from app.agent.llm import chat_ready
-from app.agent.loop import MissingApiKey, run_turn
+from app.agent.llm import MissingApiKey, QuotaExhausted, chat_ready, public_error_message
+from app.agent.loop import run_turn
 from app.config import DB_PATH, REPO_ROOT, SESSION_SECRET, snapshot_now
 from app.ingest.build import ensure_loaded
 from app.session import Session, personas, session_from_persona
@@ -141,10 +141,10 @@ def chat(
         try:
             for event in run_turn(db(), session, messages):
                 yield f"data: {json.dumps(event, default=str)}\n\n"
-        except MissingApiKey as error:
+        except (MissingApiKey, QuotaExhausted) as error:
             yield f"data: {json.dumps({'type': 'error', 'error': str(error)})}\n\n"
         except Exception as error:  # surfaced, never swallowed
-            yield f"data: {json.dumps({'type': 'error', 'error': repr(error)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'error': public_error_message(error)})}\n\n"
 
     return StreamingResponse(
         stream(),
@@ -251,9 +251,6 @@ def context(parcelpilot_session: str | None = Cookie(default=None)) -> dict[str,
         open_tickets = connection.execute(
             "SELECT COUNT(*) AS n FROM tickets WHERE status != 'Closed'"
         ).fetchone()["n"]
-        p1_tickets = connection.execute(
-            "SELECT COUNT(*) AS n FROM tickets WHERE severity = 'P1' AND status != 'Closed'"
-        ).fetchone()["n"]
         total_accounts = connection.execute(
             "SELECT COUNT(*) AS n FROM accounts"
         ).fetchone()["n"]
@@ -266,7 +263,7 @@ def context(parcelpilot_session: str | None = Cookie(default=None)) -> dict[str,
             "role": "internal",
             "stats": {
                 "open_tickets": open_tickets,
-                "p1_tickets": p1_tickets,
+                "p1_tickets": len(p1_signals),
                 "total_accounts": total_accounts,
                 "open_orders": open_orders,
                 "signal_count": len(signals),
@@ -275,17 +272,17 @@ def context(parcelpilot_session: str | None = Cookie(default=None)) -> dict[str,
         }
     else:
         orders = connection.execute(
-            "SELECT order_id, status, carrier, origin_city, destination_city, created_at "
-            "FROM orders WHERE account_id = ? ORDER BY created_at DESC LIMIT 5",
+            "SELECT order_id, status, carrier, booked_at "
+            "FROM orders WHERE account_id = ? ORDER BY booked_at DESC LIMIT 5",
             (session.account_id,)
         ).fetchall()
         open_tickets = connection.execute(
-            "SELECT ticket_id, subject, severity, status FROM tickets "
+            "SELECT ticket_id, subject, status FROM tickets "
             "WHERE account_id = ? AND status != 'Closed' ORDER BY created_at DESC LIMIT 3",
             (session.account_id,)
         ).fetchall()
         account = connection.execute(
-            "SELECT account_name, plan, account_manager FROM accounts WHERE account_id = ?",
+            "SELECT account_name, plan FROM accounts WHERE account_id = ?",
             (session.account_id,)
         ).fetchone()
         return {
