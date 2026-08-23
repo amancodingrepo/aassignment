@@ -1,11 +1,12 @@
 # Build status
 
-Last updated: 2026-08-22. Snapshot the system reasons about: 2026-08-16 11:00 IST.
+Last updated: 2026-08-23. Snapshot the system reasons about: 2026-08-16 11:00 IST.
 
-**Nothing in this repository has been executed.** There is no Python runtime on
-the build machine and Docker was not used, so every file below was written and
-reviewed but never run. Treat every "gate" as *written, not passed*. This
-document exists so that distinction does not get lost.
+The suite has now been executed. `pytest` is green, ingest produces 19 chunks
+and 24 SLA targets, the Vite bundle builds, and the API serves the SPA.
+
+Code gaps against the official brief are closed. Remaining work is recording
+the 5-minute video locally and (optionally) hosting.
 
 ---
 
@@ -13,64 +14,48 @@ document exists so that distinction does not get lost.
 
 ### Phase 0 — foundation
 
-| Item | File |
-|---|---|
-| Snapshot clock, no wall-clock fallback | `app/config.py` |
-| SQLite schema incl. `actions` and `audit_log` | `app/db.py` |
-| Authority ladder, clause resolution, conflict records | `app/authority.py` |
-| PDF → tiered section chunks | `app/ingest/documents.py` |
-| xlsx → SQLite, derived order fields | `app/ingest/workbook.py` |
-| Ingest orchestration, safe re-run | `app/ingest/build.py` |
-| Hand-authored chunk metadata (tiers, scopes, windows, topics, rule params) | `data/chunk_metadata.yaml` |
-| Chunk dump script (the gate) | `scripts/dump_chunks.py` |
-
-The seven source files were extracted into `data/` from the candidate-pack zip;
-they were not present in the repo when the build started.
+Ingest from the real PDFs and workbook: snapshot clock, SQLite schema, authority
+ladder, hand-authored `data/chunk_metadata.yaml`. Gate:
+`python -m scripts.dump_chunks` prints 19 chunks with correct tiers/scopes.
 
 ### Phase 1 — deterministic calculators
 
-`app/tools/calc.py`: cancellation fee, service credit, SLA status, severity
-classification, business-hours arithmetic, manager-approval evaluation. Each
-returns the source clause it applied.
-
-Written test-first against eval sections A, B and C, including all four
-correctness canaries.
+`app/tools/calc.py` against eval sections A, B and C. Enterprise P1 is 30
+minutes (v3), never 1 hour (deprecated v2).
 
 ### Phase 2 — scope gate and tools
 
-`app/tools/gate.py` (the boundary), `registry.py`, `docs.py` (hybrid retrieval),
-`data.py` (structured lookups), `app/session.py`. Written test-first against eval
-section E.
+`tools/gate.py`, lookups, hybrid retrieval. Cross-account denial tests green.
 
 ### Phase 3 — agent
 
-`app/agent/loop.py` (hand-rolled, 8-iteration budget, SSE events),
-`prompts.py` (two role prompts), `policy.py` (escalation rules in code, not in
-the prompt). `scripts/ask.py` runs a turn from a terminal.
+Hand-rolled loop, two role prompts, escalation policy. Terminal client:
+`python -m scripts.ask`. Conversational cases still need `ANTHROPIC_API_KEY`.
 
 ### Phase 4 — confirm protocol
 
-`app/tools/actions.py`: `propose_action` writes nothing; `execute_confirmed` is
-absent from the tool registry and reachable only from `POST /api/confirm`.
-Single-use, session-bound, ten-minute tokens with edit invalidation.
+`propose_action` writes nothing; only `POST /api/confirm` writes. Single-use,
+session-bound, ten-minute tokens.
 
 ### Phase 5 — interface
 
-`app/main.py` (FastAPI: API + built bundle) and `web/` (React + Vite): chat with
-streaming, persona switcher, tool trace with tier badges, source cards, conflict
-banner, confirm card, actions list, audit table.
+FastAPI + React. Persona switcher, tool trace, source cards, conflict banner,
+confirm card, actions, audit. Bundle at `web/dist`, served from `/`.
 
 ### Phase 6 — signals
 
-`app/signals/detect.py`: all six detectors, ranked, with evidence rows and the
-rank arithmetic printed on each card.
+Six detectors. SwiftShip concentration includes delivered ORD-4001 (ACCT-004)
+because KI-211 is about that carrier.
 
 ### Phase 7 — documentation
 
-`README.md`, `docs/ARCHITECTURE.md`, `docs/PRODUCT.md`, and the skeleton of
-`docs/AI_TOOL_USAGE.md`.
+`README.md`, `docs/ARCHITECTURE.md`, `docs/PRODUCT.md`, `docs/AI_TOOL_USAGE.md`.
 
-### Tests written
+### Tests
+
+```
+pytest   # green, 2026-08-23, Python 3.12
+```
 
 | File | Covers |
 |---|---|
@@ -79,49 +64,26 @@ rank arithmetic printed on each card.
 | `tests/test_actions.py` | Eval F1–F6, token discipline |
 | `tests/test_signals.py` | The six detectors against the expected outputs |
 | `tests/test_ingest.py` | Tiers, scopes, windows, SLA parsing, derived fields, no-wall-clock guard |
+| `tests/test_retrieval.py` | Prefilter, topic filter, deprecated opt-in, ranking |
+| `tests/test_policy.py` | Escalation rules without a model |
+| `tests/test_api.py` | Personas, session cookie, 403s, confirm, reset |
+
+First-run failures that were fixed:
+
+1. `test_no_module_reads_the_wall_clock` matched a docstring that named the
+   banned API. The comment was rephrased; there is still no wall-clock call.
+2. SwiftShip concentration omitted ACCT-004 because ORD-4001 is `DELIVERED`.
+   Orders on a carrier with an open known issue are now attached as evidence.
 
 ---
 
-## Remaining — code
-
-Small, and none of it blocks a review.
-
-| Item | Why it matters |
-|---|---|
-| `.dockerignore` | Without it the Docker build context includes `.git`, `node_modules` and the spec files. Build still works; it is just slower and fatter. |
-| `.env` loading for the non-Docker path | `docker compose` passes the key through. Running `uvicorn` directly requires exporting `ANTHROPIC_API_KEY` by hand. A dozen lines in `config.py` would read `.env` without adding a dependency. |
-| `tests/test_retrieval.py` | `app/tools/docs.py` has no direct tests. Prefilter behaviour is covered indirectly by `test_gate.py`, but ranking, the topic filter and the tier tie-break are not. |
-| `tests/test_policy.py` | `app/agent/policy.py` decides every escalation and is fully testable without a model. Currently untested. |
-| `tests/test_api.py` | The FastAPI routes have no tests. `httpx` is already a dependency, so `TestClient` coverage of the persona/confirm/403 paths is straightforward. |
-
----
-
-## Remaining — verification
-
-This is the real outstanding work.
-
-1. **Install a Python runtime and run `pytest`.** Every gate is unverified.
-2. **Expect first-run failures in ingest.** The two most likely: the section-marker
-   regexes in `data/chunk_metadata.yaml` not matching pdfplumber's actual line
-   output, and `_sla_from_table` not recognising the policy tables. Both fail
-   loudly (`_split_sections` raises on an unmatched marker; `build_chunks` raises
-   when a declared `sla_source` parses nothing), so they will not pass silently.
-3. **Run the Phase 3 gate**, which additionally needs `ANTHROPIC_API_KEY`:
-   eval cases A1–A5 and D1–D4 through `scripts/ask.py`, in the terminal, before
-   trusting anything seen through the UI.
-4. **Build the frontend** (`cd web && npm install && npm run build`) and confirm
-   the section G multi-step chain renders end to end.
-
----
-
-## Remaining — submission
+## Remaining — submission, not code
 
 | Item | Notes |
 |---|---|
-| Hosted deployment | Nothing has been pushed or deployed anywhere. The `Dockerfile` targets a single container suitable for Render or Fly. Check the free tier's cold start before relying on it. |
-| Demo video | Beat sheet is in `08_SUBMISSION_NOTES.md`. Record after a full rehearsal. |
-| `docs/AI_TOOL_USAGE.md` | Has TODOs that need your own account of what you directed and what you verified by hand. Not something I should write for you. |
-| `CLAUDE.md` hygiene | The local SkillGod plugin appended an auto-generated block to it, and that block is committed in the Phase 0 commit. Probably wants removing before the repo is submitted. |
+| Demo video | Beat sheet in `08_SUBMISSION_NOTES.md` and `README.md` "Local demo". Record at localhost:8000 with `ANTHROPIC_API_KEY` set. |
+| Hosted application | Highly preferred, not required. Dockerfile is one container. |
+| Conversational agent check | A1–A5 and D1–D4 through `scripts/ask.py` still need the key; run once before recording. |
 
 ---
 

@@ -1,6 +1,6 @@
 # Product note
 
-*Draft — ParcelPilot AI Support Agent*
+ParcelPilot AI Support Agent
 
 ## Which additional problem, and how
 

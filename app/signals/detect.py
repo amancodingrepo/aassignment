@@ -265,6 +265,12 @@ def detect_repeated_root_cause(conn: sqlite3.Connection) -> list[Signal]:
 def detect_carrier_concentration(conn: sqlite3.Connection) -> list[Signal]:
     problems: dict[str, list[dict[str, Any]]] = {}
 
+    known_issue_by_carrier = {
+        clause.flags["carrier"]: clause
+        for clause in _known_issues(conn)
+        if clause.flags.get("carrier")
+    }
+
     orders = conn.execute(
         "SELECT * FROM orders WHERE status != 'DELIVERED' OR carrier_fault = 1"
     ).fetchall()
@@ -303,11 +309,28 @@ def detect_carrier_concentration(conn: sqlite3.Connection) -> list[Signal]:
                     }
                 )
 
-    known_issue_by_carrier = {
-        clause.flags["carrier"]: clause
-        for clause in _known_issues(conn)
-        if clause.flags.get("carrier")
-    }
+    # ORD-4001 is DELIVERED, so the "open problems" query misses it, but the
+    # spec still counts it as a SwiftShip signal because KI-211 is about that
+    # carrier. Attach every order on a carrier that already has a known issue.
+    for carrier, clause in known_issue_by_carrier.items():
+        seen = {item.get("order_id") for item in problems.get(carrier, [])}
+        extras = conn.execute(
+            "SELECT * FROM orders WHERE carrier = ?", (carrier,)
+        ).fetchall()
+        for order in extras:
+            if order["order_id"] in seen:
+                continue
+            problems.setdefault(carrier, []).append(
+                {
+                    "type": "order",
+                    "order_id": order["order_id"],
+                    "account_id": order["account_id"],
+                    "reason": (
+                        f"order on {carrier} "
+                        f"(known issue {clause.flags['issue_id']})"
+                    ),
+                }
+            )
 
     signals: list[Signal] = []
     for carrier, evidence in sorted(problems.items()):

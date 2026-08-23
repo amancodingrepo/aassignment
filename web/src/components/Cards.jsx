@@ -18,9 +18,6 @@ export function TierBadge({ tier, label }) {
   )
 }
 
-// The source card is the trust surface: document, clause and tier are visible
-// without opening anything, because a citation you have to click for is a
-// citation nobody checks.
 export function SourceCard({ source }) {
   return (
     <div className="source-card">
@@ -39,19 +36,18 @@ export function SourceCard({ source }) {
   )
 }
 
-// Non-empty conflicts are the whole point of the retrieval design, so they get
-// a banner rather than a footnote.
 export function ConflictBanner({ conflicts }) {
   if (!conflicts || conflicts.length === 0) return null
   return (
-    <div className="conflict-banner">
-      <div className="conflict-title">Sources disagreed — here is which one won</div>
+    <div className="notice conflict">
+      <div className="notice-title">A higher-authority source won</div>
       {conflicts.map((conflict, index) => (
-        <div key={index} className="conflict-row">
+        <div key={index} className="notice-row">
           <div>
-            <strong>{conflict.winner}</strong> over <span className="loser">{conflict.loser}</span>
+            <strong>{conflict.winner}</strong>
+            <span className="loser"> {conflict.loser}</span>
           </div>
-          <div className="conflict-why">{conflict.why}</div>
+          <div className="notice-why">{conflict.why}</div>
         </div>
       ))}
     </div>
@@ -61,14 +57,14 @@ export function ConflictBanner({ conflicts }) {
 export function StaleGuidanceBanner({ items }) {
   if (!items || items.length === 0) return null
   return (
-    <div className="stale-banner">
-      <div className="conflict-title">Past guidance retrieved — treat as context only</div>
+    <div className="notice stale">
+      <div className="notice-title">Past guidance — context only</div>
       {items.map((item, index) => (
-        <div key={index} className="conflict-row">
+        <div key={index} className="notice-row">
           <div>
             <strong>{item.ticket_id}</strong> said: “{item.said}”
           </div>
-          <div className="conflict-why">{item.why}</div>
+          <div className="notice-why">{item.why}</div>
         </div>
       ))}
     </div>
@@ -78,8 +74,8 @@ export function StaleGuidanceBanner({ items }) {
 export function EscalationBanner({ escalation }) {
   if (!escalation) return null
   return (
-    <div className="escalation-banner">
-      <div className="conflict-title">Escalation required</div>
+    <div className="notice escalate">
+      <div className="notice-title">Needs a human</div>
       <ul>
         {escalation.reasons.map((reason, index) => (
           <li key={index}>{reason}</li>
@@ -94,9 +90,9 @@ export function ToolTrace({ calls }) {
   if (!calls || calls.length === 0) return null
 
   return (
-    <div className="tool-trace">
-      <button className="trace-toggle" onClick={() => setOpen(!open)}>
-        {open ? '▾' : '▸'} {calls.length} tool call{calls.length === 1 ? '' : 's'}
+    <div className="trace">
+      <button className="trace-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+        {calls.length} step{calls.length === 1 ? '' : 's'}
       </button>
       {open &&
         calls.map((call) => <ToolCallRow key={call.id} call={call} />)}
@@ -109,25 +105,20 @@ function ToolCallRow({ call }) {
   const args = Object.entries(call.args || {})
     .filter(([, value]) => value !== undefined && value !== null && value !== '')
     .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
-    .join(', ')
+    .join('  ')
 
   return (
-    <div className={`trace-row ${call.denied ? 'denied' : ''}`}>
+    <div className={`trace-row ${call.denied ? 'denied' : ''} ${call.summary ? 'done' : 'live'}`}>
       <button className="trace-head" onClick={() => setExpanded(!expanded)}>
         <span className="trace-name">{call.tool}</span>
-        <span className="trace-args">({args})</span>
-        <span className="trace-summary">{call.summary || '…'}</span>
+        <span className="trace-args">{args}</span>
+        <span className="trace-summary">{call.summary || 'running'}</span>
       </button>
-      {expanded && (
-        <pre className="trace-detail">{JSON.stringify(call.result, null, 2)}</pre>
-      )}
+      {expanded && <pre className="trace-detail">{JSON.stringify(call.result, null, 2)}</pre>}
     </div>
   )
 }
 
-// Every field that will be written, shown before anything is written. Editing
-// is not offered inline: an edited proposal invalidates its token by design, so
-// the honest affordance is cancel-and-ask-again.
 export function ConfirmCard({ proposal, onConfirm, onCancel, state }) {
   const preview = proposal.preview || {}
   const rows = Object.entries(preview).filter(
@@ -135,15 +126,12 @@ export function ConfirmCard({ proposal, onConfirm, onCancel, state }) {
   )
 
   return (
-    <div className={`confirm-card ${state || ''}`}>
-      <div className="confirm-head">
-        Confirm required · <strong>{proposal.kind}</strong>
+    <div className={`work-order ${state || ''}`}>
+      <div className="work-order-head">
+        <span className="kicker">Work order · not written yet</span>
+        <strong>{prettyKind(proposal.kind)}</strong>
       </div>
-      <div className="confirm-note">
-        Nothing has been written yet. This is exactly what will be written.
-      </div>
-
-      <table className="confirm-table">
+      <table className="spec">
         <tbody>
           {rows.map(([key, value]) => (
             <tr key={key}>
@@ -153,26 +141,34 @@ export function ConfirmCard({ proposal, onConfirm, onCancel, state }) {
           ))}
         </tbody>
       </table>
-
       {(proposal.warnings || []).length > 0 && (
-        <ul className="confirm-warnings">
+        <ul className="work-warnings">
           {proposal.warnings.map((warning, index) => (
             <li key={index}>{warning}</li>
           ))}
         </ul>
       )}
-
-      {state === 'executed' && <div className="confirm-done">Written. {proposal.action_id}</div>}
-      {state === 'cancelled' && <div className="confirm-done">Cancelled. Nothing was written.</div>}
-
+      {state === 'executed' && (
+        <div className="work-done ok">Filed as {proposal.action_id}</div>
+      )}
+      {state === 'cancelled' && <div className="work-done">Cancelled. Nothing was written.</div>}
       {!state && (
-        <div className="confirm-buttons">
+        <div className="work-actions">
           <button className="primary" onClick={() => onConfirm(proposal.token)}>
-            Confirm
+            Confirm and write
           </button>
-          <button onClick={() => onCancel(proposal.token)}>Cancel</button>
+          <button className="ghost" onClick={() => onCancel(proposal.token)}>
+            Cancel
+          </button>
         </div>
       )}
     </div>
   )
+}
+
+function prettyKind(kind) {
+  if (kind === 'escalation') return 'Escalation'
+  if (kind === 'ticket_update') return 'Ticket update'
+  if (kind === 'follow_up_task') return 'Follow-up task'
+  return kind || 'Action'
 }

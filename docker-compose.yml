@@ -6,8 +6,9 @@ services:
     environment:
       # The only variable you must supply. Everything except the chat loop --
       # ingest, calculators, gate, signals, confirm flow -- runs without it.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      PARCELPILOT_MODEL: ${PARCELPILOT_MODEL:-claude-sonnet-5}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      PARCELPILOT_MODEL: ${PARCELPILOT_MODEL:-gemini-2.5-flash}
       SESSION_SECRET: ${SESSION_SECRET:-dev-only-not-a-real-secret}
     volumes:
       - parcelpilot-data:/data

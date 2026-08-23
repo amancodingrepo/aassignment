@@ -46,6 +46,7 @@ class Session:
     account_id: str | None
     user_name: str
     internal_permissions: list[str] = field(default_factory=list)
+    persona_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.role not in (CUSTOMER, INTERNAL):
@@ -72,6 +73,7 @@ class Session:
             "account_id": self.account_id,
             "user_name": self.user_name,
             "internal_permissions": list(self.internal_permissions),
+            "persona_id": self.persona_id,
         }
 
 
@@ -121,5 +123,6 @@ def session_from_persona(
                 account_id=persona["account_id"],
                 user_name=persona["user_name"],
                 internal_permissions=list(persona["internal_permissions"]),
+                persona_id=persona["id"],
             )
     raise KeyError(f"unknown persona {persona_id!r}")

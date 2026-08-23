@@ -1,6 +1,6 @@
 # Architecture note
 
-*Draft — ParcelPilot AI Support Agent*
+ParcelPilot AI Support Agent
 
 ## The thesis
 

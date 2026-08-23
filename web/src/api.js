@@ -32,6 +32,8 @@ export const confirmAction = (token) =>
 export const cancelAction = (token) =>
   request('/api/cancel', { method: 'POST', body: JSON.stringify({ token }) })
 export const resetDemo = () => request('/api/reset', { method: 'POST' })
+export const getContext = () => request('/api/context')
+
 
 // The chat endpoint streams server-sent events over POST, which EventSource
 // cannot do, so the stream is read off the response body directly.

@@ -13,17 +13,17 @@ Events emitted, in the order the interface renders them:
 from __future__ import annotations
 
 import json
-import os
 import re
 import sqlite3
 from collections.abc import Iterator
 from typing import Any
 
 from app.agent import policy, prompts
-from app.config import MAX_AGENT_ITERATIONS, MODEL
+from app.agent.llm import MissingApiKey, complete
+from app.config import MAX_AGENT_ITERATIONS
 from app.session import Session
 from app.tools import gate
-from app.tools.registry import REGISTRY, schemas_for
+from app.tools.registry import REGISTRY
 
 ANSWER_BLOCK_RE = re.compile(r"```answer\s*(?P<body>\{.*?\})\s*```", re.DOTALL)
 
@@ -45,24 +45,6 @@ _TRACE_SUMMARY_KEYS = (
     "reason",
     "ok",
 )
-
-
-class MissingApiKey(RuntimeError):
-    pass
-
-
-def _client():
-    """Imported and constructed lazily so the rest of the app runs without a key."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise MissingApiKey(
-            "ANTHROPIC_API_KEY is not set. The ingest, calculators, gate, "
-            "signals and confirm flow all work without it; only the chat loop "
-            "needs a model."
-        )
-    from anthropic import Anthropic
-
-    return Anthropic(api_key=api_key)
 
 
 def _account_context(conn: sqlite3.Connection, session: Session) -> dict[str, Any]:
@@ -189,9 +171,6 @@ def run_turn(
     """Run one user turn to completion, yielding SSE-shaped events."""
     context = _account_context(conn, session)
     system = prompts.system_prompt(session.role, **context) + "\n\n" + prompts.ANSWER_CONTRACT
-    tools = schemas_for(session.role)
-
-    client = _client()
     conversation = list(messages)
     user_message = next(
         (
@@ -207,39 +186,38 @@ def run_turn(
     final_text = ""
 
     for iteration in range(MAX_AGENT_ITERATIONS):
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=2048,
-            system=system,
-            tools=tools,
-            messages=conversation,
-        )
+        turn = complete(system=system, role=session.role, conversation=conversation)
 
-        text_parts = [block.text for block in response.content if block.type == "text"]
-        tool_uses = [block for block in response.content if block.type == "tool_use"]
+        if turn.text:
+            final_text = turn.text
+            yield {"type": "token", "text": turn.text}
 
-        if text_parts:
-            joined = "\n".join(text_parts)
-            final_text = joined
-            yield {"type": "token", "text": joined}
-
-        if not tool_uses:
+        if not turn.tool_uses:
             break
 
-        conversation.append({"role": "assistant", "content": response.content})
-        tool_result_blocks = []
+        conversation.append(
+            {
+                "role": "assistant",
+                "content": turn.text,
+                "tool_uses": [
+                    {"id": call.id, "name": call.name, "args": call.args}
+                    for call in turn.tool_uses
+                ],
+                "raw": turn.raw,
+            }
+        )
+        executed = []
 
-        for block in tool_uses:
-            args = dict(block.input or {})
+        for call in turn.tool_uses:
             yield {
                 "type": "tool_start",
-                "id": block.id,
-                "tool": block.name,
-                "args": args,
+                "id": call.id,
+                "tool": call.name,
+                "args": call.args,
                 "iteration": iteration + 1,
             }
 
-            result = gate.call_tool(conn, session, block.name, args)
+            result = gate.call_tool(conn, session, call.name, call.args)
             tool_results.append(result if isinstance(result, dict) else {"result": result})
 
             if isinstance(result, dict) and result.get("requires_confirmation"):
@@ -255,21 +233,14 @@ def run_turn(
 
             yield {
                 "type": "tool_result",
-                "id": block.id,
-                "tool": block.name,
-                "summary": _summarise(block.name, result),
+                "id": call.id,
+                "tool": call.name,
+                "summary": _summarise(call.name, result),
                 "result": result,
             }
+            executed.append({"id": call.id, "name": call.name, "result": result})
 
-            tool_result_blocks.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": json.dumps(result, default=str),
-                }
-            )
-
-        conversation.append({"role": "user", "content": tool_result_blocks})
+        conversation.append({"role": "tool", "results": executed})
     else:
         # Step budget exhausted without a final answer.
         yield {

@@ -18,17 +18,17 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Iterator
-from pathlib import Path
+from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Body, Cookie, FastAPI, HTTPException, Response
+from fastapi import Body, Cookie, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, URLSafeSerializer
 
+from app.agent.llm import chat_ready
 from app.agent.loop import MissingApiKey, run_turn
 from app.config import DB_PATH, REPO_ROOT, SESSION_SECRET, snapshot_now
-from app.db import connect
 from app.ingest.build import ensure_loaded
 from app.session import Session, personas, session_from_persona
 from app.signals.detect import detect_signals
@@ -38,9 +38,6 @@ from app.tools import gate
 
 COOKIE_NAME = "parcelpilot_session"
 STATIC_DIR = REPO_ROOT / "web" / "dist"
-
-app = FastAPI(title="ParcelPilot AI Support Agent")
-serializer = URLSafeSerializer(SESSION_SECRET, salt="parcelpilot-session")
 
 _conn = None
 
@@ -52,9 +49,14 @@ def db():
     return _conn
 
 
-@app.on_event("startup")
-def _startup() -> None:
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
     db()
+    yield
+
+
+app = FastAPI(title="ParcelPilot AI Support Agent", lifespan=lifespan)
+serializer = URLSafeSerializer(SESSION_SECRET, salt="parcelpilot-session")
 
 
 def _read_session(cookie: str | None) -> Session:
@@ -70,7 +72,12 @@ def _read_session(cookie: str | None) -> Session:
         account_id=payload.get("account_id"),
         user_name=payload["user_name"],
         internal_permissions=payload.get("internal_permissions", []),
+        persona_id=payload.get("persona_id"),
     )
+
+
+def _chat_ready() -> bool:
+    return chat_ready()
 
 
 def _require_internal(session: Session) -> None:
@@ -83,6 +90,7 @@ def get_personas() -> dict[str, Any]:
     return {
         "personas": personas(db()),
         "snapshot_now": snapshot_now().isoformat(),
+        "chat_ready": _chat_ready(),
         "auth_note": (
             "Authentication is mocked for this demo: choosing a persona sets a "
             "signed cookie, with no password. Access control is not mocked -- "
@@ -93,7 +101,11 @@ def get_personas() -> dict[str, Any]:
 
 
 @app.post("/api/session")
-def create_session(response: Response, persona_id: str = Body(..., embed=True)) -> dict[str, Any]:
+def create_session(
+    request: Request,
+    response: Response,
+    persona_id: str = Body(..., embed=True),
+) -> dict[str, Any]:
     try:
         session = session_from_persona(db(), persona_id, uuid.uuid4().hex)
     except KeyError as error:
@@ -104,6 +116,8 @@ def create_session(response: Response, persona_id: str = Body(..., embed=True)) 
         serializer.dumps(session.to_public()),
         httponly=True,
         samesite="lax",
+        path="/",
+        secure=request.url.scheme == "https",
     )
     return {"session": session.to_public()}
 
@@ -228,12 +242,68 @@ def reset(parcelpilot_session: str | None = Cookie(default=None)) -> dict[str, A
     return {"ok": True, "cleared": ["actions", "audit_log", "pending_proposals"]}
 
 
+@app.get("/api/context")
+def context(parcelpilot_session: str | None = Cookie(default=None)) -> dict[str, Any]:
+    """Role-specific dashboard data for the welcome screen."""
+    session = _read_session(parcelpilot_session)
+    connection = db()
+    if session.is_internal:
+        open_tickets = connection.execute(
+            "SELECT COUNT(*) AS n FROM tickets WHERE status != 'Closed'"
+        ).fetchone()["n"]
+        p1_tickets = connection.execute(
+            "SELECT COUNT(*) AS n FROM tickets WHERE severity = 'P1' AND status != 'Closed'"
+        ).fetchone()["n"]
+        total_accounts = connection.execute(
+            "SELECT COUNT(*) AS n FROM accounts"
+        ).fetchone()["n"]
+        open_orders = connection.execute(
+            "SELECT COUNT(*) AS n FROM orders WHERE status NOT IN ('Delivered', 'Cancelled')"
+        ).fetchone()["n"]
+        signals = detect_signals(connection)
+        p1_signals = [s for s in signals if s.severity == "P1"]
+        return {
+            "role": "internal",
+            "stats": {
+                "open_tickets": open_tickets,
+                "p1_tickets": p1_tickets,
+                "total_accounts": total_accounts,
+                "open_orders": open_orders,
+                "signal_count": len(signals),
+                "p1_signal_count": len(p1_signals),
+            }
+        }
+    else:
+        orders = connection.execute(
+            "SELECT order_id, status, carrier, origin_city, destination_city, created_at "
+            "FROM orders WHERE account_id = ? ORDER BY created_at DESC LIMIT 5",
+            (session.account_id,)
+        ).fetchall()
+        open_tickets = connection.execute(
+            "SELECT ticket_id, subject, severity, status FROM tickets "
+            "WHERE account_id = ? AND status != 'Closed' ORDER BY created_at DESC LIMIT 3",
+            (session.account_id,)
+        ).fetchall()
+        account = connection.execute(
+            "SELECT account_name, plan, account_manager FROM accounts WHERE account_id = ?",
+            (session.account_id,)
+        ).fetchone()
+        return {
+            "role": "customer",
+            "account": dict(account) if account else {},
+            "recent_orders": [dict(r) for r in orders],
+            "open_tickets": [dict(r) for r in open_tickets],
+        }
+
+
 @app.get("/api/health")
+@app.get("/health")
 def health() -> dict[str, Any]:
     connection = db()
     return {
         "ok": True,
         "snapshot_now": snapshot_now().isoformat(),
+        "chat_ready": _chat_ready(),
         "chunks": connection.execute("SELECT COUNT(*) AS n FROM chunks").fetchone()["n"],
         "orders": connection.execute("SELECT COUNT(*) AS n FROM orders").fetchone()["n"],
         "tickets": connection.execute("SELECT COUNT(*) AS n FROM tickets").fetchone()["n"],

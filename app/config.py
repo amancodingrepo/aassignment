@@ -1,11 +1,11 @@
 """Process-wide configuration and the single source of "now".
 
-The dataset is a frozen snapshot, so wall-clock time is meaningless here: every
-elapsed-time and SLA calculation is relative to the snapshot instant declared on
-the workbook's README sheet. `snapshot_now()` is the only sanctioned way to ask
-what time it is. There is deliberately no fallback to `datetime.now()` -- an
-unset snapshot raises, because silently drifting to real time would corrupt
-every breach verdict in a way that looks plausible.
+The dataset is a frozen snapshot, so the process wall clock is meaningless
+here: every elapsed-time and SLA calculation is relative to the snapshot
+instant declared on the workbook's README sheet. `snapshot_now()` is the only
+sanctioned way to ask what time it is. There is deliberately no fallback to
+the host clock -- an unset snapshot raises, because silently drifting to real
+time would corrupt every breach verdict in a way that looks plausible.
 """
 
 from __future__ import annotations
@@ -15,12 +15,45 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_repo_env() -> None:
+    """Load `.env` for the non-Docker path. Existing process env wins."""
+    env_path = REPO_ROOT / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        for raw in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if key.startswith("export "):
+                key = key[len("export ") :].strip()
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            os.environ.setdefault(key, value)
+        return
+    load_dotenv(env_path, override=False)
+
+
+_load_repo_env()
+
 DATA_DIR = Path(os.environ.get("PARCELPILOT_DATA", REPO_ROOT / "data"))
 DB_PATH = Path(os.environ.get("PARCELPILOT_DB", REPO_ROOT / "var" / "parcelpilot.db"))
 WORKBOOK_PATH = DATA_DIR / "ParcelPilot_Assessment_Data.xlsx"
 CHUNK_SIDECAR_PATH = DATA_DIR / "chunk_metadata.yaml"
 
-MODEL = os.environ.get("PARCELPILOT_MODEL", "claude-sonnet-5")
+MODEL = os.environ.get(
+    "PARCELPILOT_MODEL",
+    "gemini-2.5-flash"
+    if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    else "claude-sonnet-5",
+)
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "dev-only-not-a-real-secret")
 
 IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")

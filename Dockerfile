@@ -13,7 +13,8 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PARCELPILOT_DB=/data/parcelpilot.db
+    PARCELPILOT_DB=/data/parcelpilot.db \
+    PORT=8000
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
@@ -29,4 +30,5 @@ RUN mkdir -p /data
 VOLUME ["/data"]
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Railway injects PORT. Local docker-compose leaves it at 8000.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
