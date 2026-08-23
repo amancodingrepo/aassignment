@@ -25,9 +25,9 @@ COPY tests/ ./tests/
 COPY data/ ./data/
 COPY --from=web /web/dist ./web/dist
 
-# File-backed so actions and the audit log survive a restart mid-demo.
+# Writable dir for SQLite. Do not declare VOLUME — Railway rejects it and
+# wants a dashboard volume mounted at /data instead.
 RUN mkdir -p /data
-VOLUME ["/data"]
 
 EXPOSE 8000
 # Railway injects PORT. Local docker-compose leaves it at 8000.

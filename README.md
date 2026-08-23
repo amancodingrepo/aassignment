@@ -43,7 +43,10 @@ binds to that.
    - `GEMINI_API_KEY` — required for chat
    - `SESSION_SECRET` — any long random string
    - `PARCELPILOT_DB=/data/parcelpilot.db` — already the image default
-3. **Volume** (Settings → Volumes): mount `/data` so confirm/audit rows survive a restart.
+3. **Volume** (optional, Settings → Volumes): mount `/data`. Do not add a
+   `VOLUME` line in the Dockerfile — Railway rejects that and uses its own
+   volumes. Without a volume, the SQLite file still works; it just resets on
+   each deploy.
 4. Generate a public domain. Open it and pick a persona.
 
 Health check: `GET /api/health`. Chat is SSE; do not put a second reverse proxy in front that buffers.
