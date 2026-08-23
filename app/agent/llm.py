@@ -52,11 +52,25 @@ def provider_name() -> str:
     return pair[0] if pair else "none"
 
 
+# Google retired the 2.x flash IDs; the API now 404s them.
+_RETIRED_GEMINI = {
+    "gemini-2.0-flash": "gemini-3.6-flash",
+    "gemini-2.0-flash-001": "gemini-3.6-flash",
+    "gemini-2.5-flash": "gemini-3.6-flash",
+    "models/gemini-2.0-flash": "gemini-3.6-flash",
+    "models/gemini-2.5-flash": "gemini-3.6-flash",
+}
+
+DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
+
+
 def model_name() -> str:
     override = os.environ.get("PARCELPILOT_MODEL")
     if override:
-        return override
-    return "gemini-2.5-flash" if provider_name() == "gemini" else "claude-sonnet-5"
+        return _RETIRED_GEMINI.get(override, override)
+    if provider_name() == "gemini":
+        return DEFAULT_GEMINI_MODEL
+    return "claude-sonnet-5"
 
 
 def json_schema_to_gemini(schema: dict[str, Any] | None) -> dict[str, Any]:

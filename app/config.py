@@ -50,7 +50,7 @@ CHUNK_SIDECAR_PATH = DATA_DIR / "chunk_metadata.yaml"
 
 MODEL = os.environ.get(
     "PARCELPILOT_MODEL",
-    "gemini-2.5-flash"
+    "gemini-3.6-flash"
     if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     else "claude-sonnet-5",
 )

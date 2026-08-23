@@ -84,7 +84,7 @@ uvicorn app.main:app --reload
 |---|---|---|---|
 | `GEMINI_API_KEY` | for chat | — | Gemini tool loop. Nothing else needs it. |
 | `ANTHROPIC_API_KEY` | fallback | — | Used only if no Gemini key is set. |
-| `PARCELPILOT_MODEL` | no | `gemini-2.5-flash` | Override the chat model. |
+| `PARCELPILOT_MODEL` | no | `gemini-3.6-flash` | Override the chat model. |
 | `PARCELPILOT_DB` | no | `./var/parcelpilot.db` | File-backed, so written actions survive a reload mid-demo. |
 | `SESSION_SECRET` | no | dev value | Signs the persona cookie. |
 

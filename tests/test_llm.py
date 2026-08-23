@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from app.agent.llm import gemini_tool_declarations, json_schema_to_gemini, provider_name
+from app.agent.llm import (
+    gemini_tool_declarations,
+    json_schema_to_gemini,
+    model_name,
+    provider_name,
+)
 
 
 def test_json_schema_types_are_uppercased_for_gemini():
@@ -48,3 +53,14 @@ def test_provider_name_without_keys_is_none(monkeypatch):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     assert provider_name() == "none"
+
+
+def test_retired_gemini_ids_map_to_current_flash(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("PARCELPILOT_MODEL", raising=False)
+    assert model_name() == "gemini-3.6-flash"
+    monkeypatch.setenv("PARCELPILOT_MODEL", "gemini-2.0-flash")
+    assert model_name() == "gemini-3.6-flash"
+    monkeypatch.setenv("PARCELPILOT_MODEL", "gemini-2.5-flash")
+    assert model_name() == "gemini-3.6-flash"
